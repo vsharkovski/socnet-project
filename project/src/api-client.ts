@@ -110,7 +110,7 @@ export interface LinkResult {
 /**
  * @param type All links ('all'), or just links pointing to other wiki pages ('interwiki').
  * NOTE: 'interwiki' works on Wikipedia, but not on Wikidata.
- * @returns The requested links for the given page titles.
+ * @returns All links for the given pages.
  */
 export async function getLinks(
   apiUrl: string,
@@ -150,29 +150,30 @@ export async function getLinks(
   );
 }
 
-export async function getEntityIdsPointingTo(
-  entityId: string
+/**
+ * @returns All backlinks for the given page (pages pointing to it).
+ */
+export async function getBacklinks(
+  apiUrl: string,
+  title: string
 ): Promise<string[]> {
   const initialParams = createParams({
     format: 'json',
     formatversion: '2',
-    generator: 'backlinks',
-    gblnamespace: '0', // Main Wikidata namespace, i.e. items.
-    gbllimit: 'max',
-    gbltitle: entityId,
     action: 'query',
-    props: 'info',
+    list: 'backlinks',
+    bllimit: 'max',
+    blnamespace: '0', // Main namespace.
+    bltitle: title,
   });
 
   return getResultsWithCompletion<QueryResponse, string>(
-    WIKIDATA_API_URL,
+    apiUrl,
     initialParams,
-    (json) => json.query.pages.flatMap((page) => page.title),
+    (json) => json.query.backlinks.flatMap((page) => page.title),
     (json) =>
-      json.continue?.gblcontinue
-        ? createParams(initialParams, {
-            gblcontinue: json.continue.gblcontinue,
-          })
+      json.continue?.blcontinue
+        ? createParams(initialParams, { blcontinue: json.continue.blcontinue })
         : null
   );
 }

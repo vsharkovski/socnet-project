@@ -3,8 +3,9 @@ import { readJson, writeJson } from './json-utils';
 import {
   BATCH_SIZE,
   ENTITIY_IDS,
+  WIKIDATA_API_URL,
   WIKIPEDIA_API_URL,
-  getEntityIdsPointingTo,
+  getBacklinks,
   getLinks,
   getPoliticianNames,
 } from './api-client';
@@ -59,7 +60,10 @@ async function getAllCandidateIds(): Promise<string[]> {
 
   for (const occupationId of CANDIDATE_VALID_OCCUPATIONS) {
     console.log(`Getting candidates with occupation ${occupationId}`);
-    const candidatesWithOccupation = await getEntityIdsPointingTo(occupationId);
+    const candidatesWithOccupation = await getBacklinks(
+      WIKIDATA_API_URL,
+      occupationId
+    );
     console.log(
       `Candidate ids with occupation ${occupationId}:`,
       candidatesWithOccupation
@@ -121,7 +125,7 @@ async function constructGraph(titles: string[]): Promise<Edge[]> {
   const edges: Edge[] = [];
 
   await doBatched(titles, BATCH_SIZE, async (batchTitles) => {
-    const results = await getLinks(WIKIPEDIA_API_URL, 'interwiki', batchTitles);
+    const results = await getLinks(WIKIPEDIA_API_URL, 'all', batchTitles);
 
     for (const result of results) {
       for (const link of result.links) {
