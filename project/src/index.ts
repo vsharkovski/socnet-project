@@ -16,13 +16,6 @@ const CANDIDATES_FILE = 'output/candidates.json';
 const POLITICIAN_NAMES_FILE = 'output/politician-names.json';
 const GRAPH_FILE = 'output/graph.json';
 
-const CANDIDATE_VALID_OCCUPATIONS = [
-  ENTITIY_IDS.US_SENATOR,
-  ENTITIY_IDS.US_REPRESENTATIVE,
-  ENTITIY_IDS.US_PRESIDENT,
-  ENTITIY_IDS.US_VICE_PRESIDENT,
-];
-
 async function main(): Promise<void> {
   if (!existsSync('output')) {
     mkdirSync('output');
@@ -35,6 +28,7 @@ async function main(): Promise<void> {
   console.log('Politician names', politicianNames);
 
   const graph = await getGraph(politicianNames);
+  // const graph: Edge[] = [];
 
   const shortenName = (s: string): string => {
     const a = s.split(' ');
@@ -56,25 +50,39 @@ async function getAllCandidateIds(): Promise<string[]> {
   }
 
   console.log('Getting candidate IDs');
-  const uniqueCandidateIds = new Set<string>();
 
-  for (const occupationId of CANDIDATE_VALID_OCCUPATIONS) {
-    console.log(`Getting candidates with occupation ${occupationId}`);
-    const candidatesWithOccupation = await getBacklinks(
-      WIKIDATA_API_URL,
-      occupationId
-    );
-    console.log(
-      `Candidate ids with occupation ${occupationId}:`,
-      candidatesWithOccupation
-    );
+  candidateIds = await getBacklinks(
+    WIKIDATA_API_URL,
+    ENTITIY_IDS.US_CONGRESS_117
+  );
 
-    for (const candidateId of candidatesWithOccupation) {
-      uniqueCandidateIds.add(candidateId);
-    }
-  }
+  // const CANDIDATE_VALID_OCCUPATIONS = [
+  //   ENTITIY_IDS.US_SENATOR,
+  //   ENTITIY_IDS.US_REPRESENTATIVE,
+  //   ENTITIY_IDS.US_PRESIDENT,
+  //   ENTITIY_IDS.US_VICE_PRESIDENT,
+  // ];
 
-  candidateIds = Array.from(uniqueCandidateIds);
+  // const uniqueCandidateIds = new Set<string>();
+
+  // for (const occupationId of CANDIDATE_VALID_OCCUPATIONS) {
+  //   console.log(`Getting candidates with occupation ${occupationId}`);
+  //   const candidatesWithOccupation = await getBacklinks(
+  //     WIKIDATA_API_URL,
+  //     occupationId
+  //   );
+  //   console.log(
+  //     `Candidate ids with occupation ${occupationId}:`,
+  //     candidatesWithOccupation
+  //   );
+
+  //   for (const candidateId of candidatesWithOccupation) {
+  //     uniqueCandidateIds.add(candidateId);
+  //   }
+  // }
+
+  // candidateIds = Array.from(uniqueCandidateIds);
+
   writeJson(CANDIDATES_FILE, candidateIds);
 
   return candidateIds;
@@ -125,7 +133,11 @@ async function constructGraph(titles: string[]): Promise<Edge[]> {
   const edges: Edge[] = [];
 
   await doBatched(titles, BATCH_SIZE, async (batchTitles) => {
-    const results = await getLinks(WIKIPEDIA_API_URL, 'all', batchTitles);
+    console.log('Getting links with filtering');
+
+    const results = await doBatched(titles, BATCH_SIZE, async (batchTitles2) =>
+      getLinks(WIKIPEDIA_API_URL, batchTitles2, batchTitles)
+    );
 
     for (const result of results) {
       for (const link of result.links) {

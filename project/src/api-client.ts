@@ -23,6 +23,8 @@ export const ENTITIY_IDS = {
   US_REPRESENTATIVE: 'Q13218630',
   US_PRESIDENT: 'Q11696',
   US_VICE_PRESIDENT: 'Q11699',
+  US_CONGRESS_118: 'Q104842452',
+  US_CONGRESS_117: 'Q65089999',
 };
 
 /**
@@ -110,28 +112,39 @@ export interface LinkResult {
 /**
  * @param type All links ('all'), or just links pointing to other wiki pages ('interwiki').
  * NOTE: 'interwiki' works on Wikipedia, but not on Wikidata.
+ * @param validLinks Use API to filter for only these links.
  * @returns All links for the given pages.
  */
 export async function getLinks(
   apiUrl: string,
-  type: 'all' | 'interwiki',
-  titles: string[]
+  titles: string[],
+  validLinks?: string[]
 ): Promise<LinkResult[]> {
   if (titles.length > MAX_BATCH_SIZE) {
     throw new Error(
-      `Too many items (${titles.length}), max is ${MAX_BATCH_SIZE}`
+      `Too many items in titles (${titles.length}), max is ${MAX_BATCH_SIZE}`
+    );
+  }
+  if (validLinks && validLinks.length > MAX_BATCH_SIZE) {
+    throw new Error(
+      `Too many items in validLinks (${titles.length}), max is ${MAX_BATCH_SIZE}`
     );
   }
 
-  const initialParams = createParams({
+  let initialParams = createParams({
     format: 'json',
     formatversion: '2',
     action: 'query',
-    prop: type === 'all' ? 'links' : 'iwlinks',
+    prop: 'links',
     pllimit: 'max',
-    iwlimit: 'max',
     titles: titles.join('|'),
   });
+
+  if (validLinks) {
+    initialParams = createParams(initialParams, {
+      pltitles: validLinks.join('|'),
+    });
+  }
 
   return getResultsWithCompletion<QueryResponse, LinkResult>(
     apiUrl,
