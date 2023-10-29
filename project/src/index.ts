@@ -14,7 +14,7 @@ import { doBatched } from './batch-utils';
 // File names.
 const CANDIDATES_FILE = 'output/candidates.json';
 const POLITICIAN_NAMES_FILE = 'output/politician-names.json';
-const GRAPH_FILE = 'output/graph.json';
+const EDGES_FILE = 'output/edges.json';
 
 async function main(): Promise<void> {
   if (!existsSync('output')) {
@@ -27,20 +27,11 @@ async function main(): Promise<void> {
   const politicianNames = await getAllPoliticianNames(candidateIds);
   console.log('Politician names', politicianNames);
 
-  const graph = await getGraph(politicianNames);
-  // const graph: Edge[] = [];
+  const edges = await getEdges(politicianNames);
+  console.log('Graph edges', edges);
 
-  const shortenName = (s: string): string => {
-    const a = s.split(' ');
-    if (a.length == 1) return s;
-    a[0] = a[0][0];
-    return a.join('');
-  };
-
-  console.log('Graph edge count:', graph.length);
-  for (const edge of graph) {
-    console.log(shortenName(edge.from), shortenName(edge.to));
-  }
+  console.log('Graph node count:', politicianNames.length);
+  console.log('Graph edge count:', edges.length);
 }
 
 async function getAllCandidateIds(): Promise<string[]> {
@@ -55,33 +46,6 @@ async function getAllCandidateIds(): Promise<string[]> {
     WIKIDATA_API_URL,
     ENTITIY_IDS.US_CONGRESS_117
   );
-
-  // const CANDIDATE_VALID_OCCUPATIONS = [
-  //   ENTITIY_IDS.US_SENATOR,
-  //   ENTITIY_IDS.US_REPRESENTATIVE,
-  //   ENTITIY_IDS.US_PRESIDENT,
-  //   ENTITIY_IDS.US_VICE_PRESIDENT,
-  // ];
-
-  // const uniqueCandidateIds = new Set<string>();
-
-  // for (const occupationId of CANDIDATE_VALID_OCCUPATIONS) {
-  //   console.log(`Getting candidates with occupation ${occupationId}`);
-  //   const candidatesWithOccupation = await getBacklinks(
-  //     WIKIDATA_API_URL,
-  //     occupationId
-  //   );
-  //   console.log(
-  //     `Candidate ids with occupation ${occupationId}:`,
-  //     candidatesWithOccupation
-  //   );
-
-  //   for (const candidateId of candidatesWithOccupation) {
-  //     uniqueCandidateIds.add(candidateId);
-  //   }
-  // }
-
-  // candidateIds = Array.from(uniqueCandidateIds);
 
   writeJson(CANDIDATES_FILE, candidateIds);
 
@@ -113,31 +77,27 @@ interface Edge {
   to: string;
 }
 
-async function getGraph(politicianNames: string[]): Promise<Edge[]> {
-  let graph = readJson<Edge[]>(GRAPH_FILE);
+async function getEdges(politicianNames: string[]): Promise<Edge[]> {
+  let edges = readJson<Edge[]>(EDGES_FILE);
 
-  if (graph) {
-    return graph;
+  if (edges) {
+    return edges;
   }
 
-  console.log('Creating graph');
-  graph = await constructGraph(politicianNames);
+  console.log('Getting edges');
+  edges = await getEdgesBetweenTitles(politicianNames);
 
-  writeJson(GRAPH_FILE, graph);
+  writeJson(EDGES_FILE, edges);
 
-  return graph;
+  return edges;
 }
 
-async function constructGraph(titles: string[]): Promise<Edge[]> {
+async function getEdgesBetweenTitles(titles: string[]): Promise<Edge[]> {
   const nodes = new Set(titles);
   const edges: Edge[] = [];
 
   await doBatched(titles, BATCH_SIZE, async (batchTitles) => {
-    console.log('Getting links with filtering');
-
-    const results = await doBatched(titles, BATCH_SIZE, async (batchTitles2) =>
-      getLinks(WIKIPEDIA_API_URL, batchTitles2, batchTitles)
-    );
+    const results = await getLinks(WIKIPEDIA_API_URL, batchTitles);
 
     for (const result of results) {
       for (const link of result.links) {
