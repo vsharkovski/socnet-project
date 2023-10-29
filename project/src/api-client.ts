@@ -5,27 +5,13 @@ import { QueryResponse } from './query-response';
 export const WIKIDATA_API_URL = 'https://www.wikidata.org/w/api.php';
 export const WIKIPEDIA_API_URL = 'https://en.wikipedia.org/w/api.php';
 
-// Batch size when sending multiple items to APIs.
-export const BATCH_SIZE = 50;
-
 // Hard limit on batch size enforced by APIs.
 export const MAX_BATCH_SIZE = 50;
 
-// Wikidata IDs of relevant properties and entities.
-export const PROPERTY_IDS = {
-  INSTANCE_OF: 'P31',
-  OCCUPATION: 'P106',
-};
-
-export const ENTITIY_IDS = {
-  POLITICIAN: 'Q82955',
-  US_SENATOR: 'Q4416090',
-  US_REPRESENTATIVE: 'Q13218630',
-  US_PRESIDENT: 'Q11696',
-  US_VICE_PRESIDENT: 'Q11699',
-  US_CONGRESS_118: 'Q104842452',
-  US_CONGRESS_117: 'Q65089999',
-};
+export interface LinkResult {
+  title: string;
+  links: string[];
+}
 
 /**
  * @returns URLSearchParams from merging existing URLSearchParams
@@ -104,11 +90,6 @@ export async function getResultsWithCompletion<T, G>(
   return allResults;
 }
 
-export interface LinkResult {
-  title: string;
-  links: string[];
-}
-
 /**
  * @param type All links ('all'), or just links pointing to other wiki pages ('interwiki').
  * NOTE: 'interwiki' works on Wikipedia, but not on Wikidata.
@@ -120,17 +101,6 @@ export async function getLinks(
   titles: string[],
   validLinks?: string[]
 ): Promise<LinkResult[]> {
-  if (titles.length > MAX_BATCH_SIZE) {
-    throw new Error(
-      `Too many items in titles (${titles.length}), max is ${MAX_BATCH_SIZE}`
-    );
-  }
-  if (validLinks && validLinks.length > MAX_BATCH_SIZE) {
-    throw new Error(
-      `Too many items in validLinks (${titles.length}), max is ${MAX_BATCH_SIZE}`
-    );
-  }
-
   let initialParams = createParams({
     format: 'json',
     formatversion: '2',
@@ -191,19 +161,19 @@ export async function getBacklinks(
   );
 }
 
-export async function getPoliticianNames(
-  entityIds: string[]
+/**
+ * @returns Names (labels in English) for the given entities, filtered for those
+ * which have the given property with the given value.
+ */
+export async function getNamesFiltered(
+  entityIds: string[],
+  propertyId: string,
+  propertyValue: string
 ): Promise<string[]> {
-  if (entityIds.length > MAX_BATCH_SIZE) {
-    throw new Error(
-      `Too many items (${entityIds.length}), max is ${MAX_BATCH_SIZE}`
-    );
-  }
-
-  const isPolitician = (entity: Entity) =>
-    entity.claims.hasOwnProperty(PROPERTY_IDS.OCCUPATION) &&
-    entity.claims[PROPERTY_IDS.OCCUPATION].some(
-      (obj) => obj.mainsnak.datavalue.value.id === ENTITIY_IDS.POLITICIAN
+  const doesMatch = (entity: Entity) =>
+    entity.claims.hasOwnProperty(propertyId) &&
+    entity.claims[propertyId].some(
+      (obj) => obj.mainsnak.datavalue.value.id === propertyValue
     );
 
   const initialParams = createParams({
@@ -220,7 +190,7 @@ export async function getPoliticianNames(
     initialParams,
     (json) =>
       Object.values(json.entities)
-        .filter(isPolitician)
+        .filter(doesMatch)
         .filter((entity) => entity.labels.hasOwnProperty('en'))
         .map((entity) => entity.labels.en.value),
     (json) => null
