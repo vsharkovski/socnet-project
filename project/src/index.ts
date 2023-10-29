@@ -5,8 +5,9 @@ import {
   WIKIDATA_API_URL,
   WIKIPEDIA_API_URL,
   getBacklinks,
-  getLinks,
   getNamesFiltered,
+  getWikitext,
+  parseLinks,
 } from './api-client';
 import { doBatched } from './batch-utils';
 import { exit } from 'process';
@@ -34,6 +35,11 @@ const ENTITIY_IDS = {
   US_CONGRESS_118: 'Q104842452',
   US_CONGRESS_117: 'Q65089999',
 };
+
+interface Edge {
+  from: string;
+  to: string;
+}
 
 async function main(): Promise<void> {
   if (!existsSync('output')) {
@@ -89,11 +95,6 @@ async function getAllPoliticianNames(
   return politicianNames;
 }
 
-interface Edge {
-  from: string;
-  to: string;
-}
-
 async function getEdges(politicianNames: string[]): Promise<Edge[]> {
   let edges = readJson<Edge[]>(EDGES_FILE);
 
@@ -113,19 +114,29 @@ async function getEdgesBetweenTitles(titles: string[]): Promise<Edge[]> {
   const nodes = new Set(titles);
   const edges: Edge[] = [];
 
-  await doBatched(titles, BATCH_SIZE, async (batchTitles) => {
-    const results = await getLinks(WIKIPEDIA_API_URL, batchTitles);
+  for (const title of titles) {
+    const links = await getLinksNoFooter(title);
 
-    for (const result of results) {
-      for (const link of result.links) {
-        if (nodes.has(link)) {
-          edges.push({ from: result.title, to: link });
-        }
+    for (const link of links) {
+      if (nodes.has(link)) {
+        edges.push({ from: title, to: link });
       }
     }
-  });
+  }
 
   return edges;
+}
+
+async function getLinksNoFooter(title: string): Promise<string[]> {
+  const wikitext = await getWikitext(WIKIPEDIA_API_URL, title);
+  if (!wikitext) return [];
+
+  let endIndex: number = wikitext.indexOf('== External Links ==');
+  if (endIndex == -1) {
+    return parseLinks(wikitext);
+  } else {
+    return parseLinks(wikitext, endIndex);
+  }
 }
 
 // Tests.

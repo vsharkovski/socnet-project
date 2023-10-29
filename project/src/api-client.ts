@@ -1,6 +1,3 @@
-import { Entity, EntityResponse } from './entity-response';
-import { QueryResponse } from './query-response';
-
 // API URLs.
 export const WIKIDATA_API_URL = 'https://www.wikidata.org/w/api.php';
 export const WIKIPEDIA_API_URL = 'https://en.wikipedia.org/w/api.php';
@@ -8,9 +5,52 @@ export const WIKIPEDIA_API_URL = 'https://en.wikipedia.org/w/api.php';
 // Hard limit on batch size enforced by APIs.
 export const MAX_BATCH_SIZE = 50;
 
+/**
+ * A pair of: a page's title, and links associated with that page.
+ */
 export interface LinkResult {
   title: string;
   links: string[];
+}
+
+interface EntityResponse {
+  entities: { [id: string]: Entity };
+}
+
+interface Entity {
+  id: string;
+  labels: {
+    [language: string]: { language: string; value: string };
+  };
+  claims: {
+    [propertyId: string]: {
+      mainsnak: { datavalue: { value: { id: string } } };
+    }[];
+  };
+}
+
+interface QueryResponse {
+  continue?: {
+    continue?: string;
+    plcontinue?: string;
+    blcontinue?: string;
+    gblcontinue?: string;
+  };
+  query: {
+    pages: QueryPage[];
+    backlinks: QueryPage[];
+  };
+}
+
+interface QueryPage {
+  title: string;
+  links?: { title: string }[];
+}
+
+interface ParseResponse {
+  parse: {
+    wikitext: string;
+  };
 }
 
 /**
@@ -35,10 +75,10 @@ export function createParams(
   ]);
 }
 
-export async function getResponse(
+export async function getResponse<T>(
   url: string,
   params: URLSearchParams
-): Promise<Response> {
+): Promise<T> {
   const finalUrl = `${url}?${params}`;
   console.log('Sending request:', finalUrl);
 
@@ -50,7 +90,10 @@ export async function getResponse(
     );
   }
 
-  return response;
+  const jsonUncasted = await response.json();
+  const json = jsonUncasted as T;
+
+  return json;
 }
 
 export async function getResultsWithCompletion<T, G>(
@@ -67,9 +110,7 @@ export async function getResultsWithCompletion<T, G>(
       requestNumber++;
       console.log(`Sending request ${requestNumber}`);
 
-      const response = await getResponse(apiUrl, params);
-      const jsonUncasted = await response.json();
-      const json = jsonUncasted as T;
+      const json = await getResponse<T>(apiUrl, params);
 
       const results = resultHandler(json);
       for (const result of results) {
@@ -91,12 +132,11 @@ export async function getResultsWithCompletion<T, G>(
 }
 
 /**
- * @param type All links ('all'), or just links pointing to other wiki pages ('interwiki').
- * NOTE: 'interwiki' works on Wikipedia, but not on Wikidata.
  * @param validLinks Use API to filter for only these links.
- * @returns All links for the given pages.
+ * @returns All links for the given pages, in the form of LinkResults.
+ * There may be more than one LinkResult for the same page.
  */
-export async function getLinks(
+export async function getAllLinks(
   apiUrl: string,
   titles: string[],
   validLinks?: string[]
@@ -161,6 +201,26 @@ export async function getBacklinks(
   );
 }
 
+export async function getWikitext(
+  apiUrl: string,
+  title: string
+): Promise<string | null> {
+  const params = createParams({
+    format: 'json',
+    formatversion: '2',
+    action: 'parse',
+    prop: 'wikitext',
+    page: title,
+  });
+
+  try {
+    const response = await getResponse<ParseResponse>(apiUrl, params);
+    return response.parse.wikitext;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
 /**
  * @returns Names (labels in English) for the given entities, filtered for those
  * which have the given property with the given value.
@@ -195,4 +255,30 @@ export async function getNamesFiltered(
         .map((entity) => entity.labels.en.value),
     (json) => null
   );
+}
+
+export function parseLinks(wikitext: string, endIndex?: number): string[] {
+  const links: string[] = [];
+
+  let startIndex = 0;
+  if (endIndex === undefined) endIndex = wikitext.length;
+
+  while (startIndex < wikitext.length) {
+    const openBracketIndex = wikitext.indexOf('[[', startIndex);
+    if (openBracketIndex === -1 || openBracketIndex >= endIndex) {
+      break;
+    }
+
+    const closeBracketIndex = wikitext.indexOf(']]', openBracketIndex);
+    if (closeBracketIndex === -1) {
+      break;
+    }
+
+    const link = wikitext.substring(openBracketIndex + 2, closeBracketIndex);
+    links.push(link);
+
+    startIndex = closeBracketIndex + 1;
+  }
+
+  return links;
 }
