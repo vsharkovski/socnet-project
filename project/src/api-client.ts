@@ -13,23 +13,42 @@ export interface LinkResult {
   links: string[];
 }
 
-interface EntityResponse {
-  entities: { [id: string]: Entity };
+export interface EntityResponse {
+  entities: {
+    [id: string]: Entity;
+  };
 }
 
-interface Entity {
+export interface Entity {
   id: string;
   labels: {
-    [language: string]: { language: string; value: string };
+    [language: string]: {
+      language: string;
+      value: string;
+    };
   };
   claims: {
-    [propertyId: string]: {
-      mainsnak: { datavalue: { value: { id: string } } };
-    }[];
+    [propertyId: string]: Property[];
   };
 }
 
-interface QueryResponse {
+export interface Property {
+  mainsnak: Snak;
+  qualifiers?: {
+    [propertyId: string]: Snak[];
+  };
+}
+
+export interface Snak {
+  datavalue: {
+    value: {
+      id?: string;
+      time?: string;
+    };
+  };
+}
+
+export interface QueryResponse {
   continue?: {
     continue?: string;
     plcontinue?: string;
@@ -42,12 +61,14 @@ interface QueryResponse {
   };
 }
 
-interface QueryPage {
+export interface QueryPage {
   title: string;
-  links?: { title: string }[];
+  links?: {
+    title: string;
+  }[];
 }
 
-interface ParseResponse {
+export interface ParseResponse {
   parse: {
     wikitext: string;
   };
@@ -96,11 +117,11 @@ export async function getResponse<T>(
   return json;
 }
 
-export async function getResultsWithCompletion<T, G>(
+export async function getResults<T, G>(
   apiUrl: string,
   params: URLSearchParams,
   resultHandler: (json: T) => G[],
-  continueHandler: (json: T) => URLSearchParams | null
+  continueHandler?: (json: T) => URLSearchParams | null
 ): Promise<G[]> {
   const allResults: G[] = [];
   let requestNumber = 0;
@@ -117,10 +138,11 @@ export async function getResultsWithCompletion<T, G>(
         allResults.push(result);
       }
 
+      if (!continueHandler) break;
+
       const newParams = continueHandler(json);
-      if (!newParams) {
-        break;
-      }
+      if (!newParams) break;
+
       params = newParams;
     } catch (error) {
       console.error(error);
@@ -156,7 +178,7 @@ export async function getAllLinks(
     });
   }
 
-  return getResultsWithCompletion<QueryResponse, LinkResult>(
+  return getResults<QueryResponse, LinkResult>(
     apiUrl,
     initialParams,
     (json) =>
@@ -190,7 +212,7 @@ export async function getBacklinks(
     bltitle: title,
   });
 
-  return getResultsWithCompletion<QueryResponse, string>(
+  return getResults<QueryResponse, string>(
     apiUrl,
     initialParams,
     (json) => json.query.backlinks.flatMap((page) => page.title),
@@ -221,21 +243,8 @@ export async function getWikitext(
     return null;
   }
 }
-/**
- * @returns Names (labels in English) for the given entities, filtered for those
- * which have the given property with the given value.
- */
-export async function getNamesFiltered(
-  entityIds: string[],
-  propertyId: string,
-  propertyValue: string
-): Promise<string[]> {
-  const doesMatch = (entity: Entity) =>
-    entity.claims.hasOwnProperty(propertyId) &&
-    entity.claims[propertyId].some(
-      (obj) => obj.mainsnak.datavalue.value.id === propertyValue
-    );
 
+export async function getEntities(entityIds: string[]): Promise<Entity[]> {
   const initialParams = createParams({
     format: 'json',
     formatversion: '2',
@@ -245,15 +254,10 @@ export async function getNamesFiltered(
     ids: entityIds.join('|'),
   });
 
-  return getResultsWithCompletion<EntityResponse, string>(
+  return getResults<EntityResponse, Entity>(
     WIKIDATA_API_URL,
     initialParams,
-    (json) =>
-      Object.values(json.entities)
-        .filter(doesMatch)
-        .filter((entity) => entity.labels.hasOwnProperty('en'))
-        .map((entity) => entity.labels.en.value),
-    (json) => null
+    (json) => Object.values(json.entities)
   );
 }
 

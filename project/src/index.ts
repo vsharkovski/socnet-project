@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync } from 'fs';
 import { readJson, writeJson } from './json-utils';
 import {
+  Entity,
   MAX_BATCH_SIZE,
+  Property,
   WIKIDATA_API_URL,
   WIKIPEDIA_API_URL,
   getBacklinks,
-  getNamesFiltered,
+  getEntities,
   getWikitext,
   parseLinks,
 } from './api-client';
@@ -14,27 +16,47 @@ import { exit } from 'process';
 
 // File names.
 const CANDIDATES_FILE = 'output/candidates.json';
-const POLITICIAN_NAMES_FILE = 'output/politician-names.json';
+const POLITICIANS_FILE = 'output/politicians.json';
 const EDGES_FILE = 'output/edges.json';
 
 // Batch size when sending multiple items to APIs.
 const BATCH_SIZE = 50;
 
 // Wikidata IDs of relevant properties and entities.
-const PROPERTY_IDS = {
-  INSTANCE_OF: 'P31',
-  OCCUPATION: 'P106',
+const IDS = {
+  PROPERTY: {
+    INSTANCE_OF: 'P31',
+    POSITION_HELD: 'P39',
+    OCCUPATION: 'P106',
+    PARLIAMENTARY_GROUP: 'P4100',
+  },
+  ENTITY: {
+    POLITICIAN: 'Q82955',
+    US: {
+      POSITION: {
+        SENATOR: 'Q4416090',
+        REPRESENTATIVE: 'Q13218630',
+        PRESIDENT: 'Q11696',
+        VICE_PRESIDENT: 'Q11699',
+      },
+      CONGRESS: {
+        CONGRESS_118: 'Q104842452',
+        CONGRESS_117: 'Q65089999',
+      },
+      PARTY: {
+        REPUBLICAN: 'Q29468',
+        DEMOCRATIC: 'Q29552',
+      },
+    },
+  },
 };
 
-const ENTITIY_IDS = {
-  POLITICIAN: 'Q82955',
-  US_SENATOR: 'Q4416090',
-  US_REPRESENTATIVE: 'Q13218630',
-  US_PRESIDENT: 'Q11696',
-  US_VICE_PRESIDENT: 'Q11699',
-  US_CONGRESS_118: 'Q104842452',
-  US_CONGRESS_117: 'Q65089999',
-};
+type Party = 'republican' | 'democratic';
+
+interface Politician {
+  name: string;
+  party: Party;
+}
 
 interface Edge {
   from: string;
@@ -46,20 +68,21 @@ async function main(): Promise<void> {
     mkdirSync('output');
   }
 
-  const candidateIds = await getAllCandidateIds();
+  const candidateIds = await loadOrGetCandidateIds();
   console.log('Candidate IDs', candidateIds);
 
-  const politicianNames = await getAllPoliticianNames(candidateIds);
-  console.log('Politician names', politicianNames);
+  const politicians = await loadOrGetPoliticians(candidateIds);
+  console.log('Politicians', politicians);
 
-  const edges = await getEdges(politicianNames);
+  const politicianNames = politicians.map((p) => p.name);
+  const edges = await loadOrGetEdges(politicianNames);
   console.log('Graph edges', edges);
 
-  console.log('Graph node count:', politicianNames.length);
+  console.log('Graph node count:', politicians.length);
   console.log('Graph edge count:', edges.length);
 }
 
-async function getAllCandidateIds(): Promise<string[]> {
+async function loadOrGetCandidateIds(): Promise<string[]> {
   let candidateIds = readJson<string[]>(CANDIDATES_FILE);
   if (candidateIds) {
     return candidateIds;
@@ -69,7 +92,7 @@ async function getAllCandidateIds(): Promise<string[]> {
 
   candidateIds = await getBacklinks(
     WIKIDATA_API_URL,
-    ENTITIY_IDS.US_CONGRESS_117
+    IDS.ENTITY.US.CONGRESS.CONGRESS_117
   );
 
   writeJson(CANDIDATES_FILE, candidateIds);
@@ -77,25 +100,68 @@ async function getAllCandidateIds(): Promise<string[]> {
   return candidateIds;
 }
 
-async function getAllPoliticianNames(
+async function loadOrGetPoliticians(
   candidateIds: string[]
-): Promise<string[]> {
-  let politicianNames = readJson<string[]>(POLITICIAN_NAMES_FILE);
-  if (politicianNames) {
-    return politicianNames;
+): Promise<Politician[]> {
+  let politicians = readJson<Politician[]>(POLITICIANS_FILE);
+  if (politicians) {
+    return politicians;
   }
 
   console.log('Getting politician names');
-  politicianNames = await doBatched(candidateIds, BATCH_SIZE, (batchIds) =>
-    getNamesFiltered(batchIds, PROPERTY_IDS.OCCUPATION, ENTITIY_IDS.POLITICIAN)
-  );
+  politicians = await getPoliticians(candidateIds);
 
-  writeJson(POLITICIAN_NAMES_FILE, politicianNames);
+  writeJson(POLITICIANS_FILE, politicians);
 
-  return politicianNames;
+  return politicians;
 }
 
-async function getEdges(politicianNames: string[]): Promise<Edge[]> {
+async function getPoliticians(candidateIds: string[]): Promise<Politician[]> {
+  const entities = await doBatched(candidateIds, BATCH_SIZE, (batchIds) =>
+    getEntities(batchIds)
+  );
+
+  const politicians: Politician[] = entities
+    .map((entity) => {
+      if (!Object.hasOwn(entity.labels, 'en')) return null;
+      const name = entity.labels['en'].value;
+
+      const party = getLatestParty(entity);
+      if (party === null) return null;
+
+      return { name: name, party: party };
+    })
+    .filter((politician): politician is Politician => politician !== null);
+
+  return politicians;
+}
+
+function getLatestParty(entity: Entity): Party | null {
+  if (!Object.hasOwn(entity.claims, IDS.PROPERTY.POSITION_HELD)) return null;
+
+  const positions = entity.claims[IDS.PROPERTY.POSITION_HELD];
+  const positionsWithParty = positions.filter(
+    (position) =>
+      position.qualifiers &&
+      Object.hasOwn(position.qualifiers, IDS.PROPERTY.PARLIAMENTARY_GROUP)
+  );
+  if (positionsWithParty.length === 0) return null;
+
+  const getDate = (position: Property) =>
+    new Date(position.mainsnak.datavalue.value.time!);
+  const latestPosition = positionsWithParty.reduce((latestSoFar, current) =>
+    getDate(current) > getDate(latestSoFar) ? current : latestSoFar
+  );
+
+  const latestPositionPartyId =
+    latestPosition.qualifiers![IDS.PROPERTY.PARLIAMENTARY_GROUP][0].datavalue
+      .value.id!;
+  return latestPositionPartyId === IDS.ENTITY.US.PARTY.REPUBLICAN
+    ? 'republican'
+    : 'democratic';
+}
+
+async function loadOrGetEdges(titles: string[]): Promise<Edge[]> {
   let edges = readJson<Edge[]>(EDGES_FILE);
 
   if (edges) {
@@ -103,14 +169,14 @@ async function getEdges(politicianNames: string[]): Promise<Edge[]> {
   }
 
   console.log('Getting edges');
-  edges = await getEdgesBetweenTitles(politicianNames);
+  edges = await getEdges(titles);
 
   writeJson(EDGES_FILE, edges);
 
   return edges;
 }
 
-async function getEdgesBetweenTitles(titles: string[]): Promise<Edge[]> {
+async function getEdges(titles: string[]): Promise<Edge[]> {
   const nodes = new Set(titles);
   const edges: Edge[] = [];
 
