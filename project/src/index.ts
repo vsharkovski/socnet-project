@@ -13,11 +13,14 @@ import {
 } from './api-client';
 import { doBatched } from './batch-utils';
 import { exit } from 'process';
+import { createObjectCsvWriter } from 'csv-writer';
 
 // File names.
-const CANDIDATES_FILE = 'output/candidates.json';
-const POLITICIANS_FILE = 'output/politicians.json';
-const EDGES_FILE = 'output/edges.json';
+const CANDIDATES_JSON_FILE = 'output/candidates.json';
+const POLITICIANS_JSON_FILE = 'output/politicians.json';
+const POLITICIANS_CSV_FILE = 'output/politicians.csv';
+const EDGES_JSON_FILE = 'output/edges.json';
+const EDGES_CSV_FILE = 'output/edges.csv';
 
 // Batch size when sending multiple items to APIs.
 const BATCH_SIZE = 50;
@@ -83,7 +86,7 @@ async function main(): Promise<void> {
 }
 
 async function loadOrGetCandidateIds(): Promise<string[]> {
-  let candidateIds = readJson<string[]>(CANDIDATES_FILE);
+  let candidateIds = readJson<string[]>(CANDIDATES_JSON_FILE);
   if (candidateIds) {
     return candidateIds;
   }
@@ -95,7 +98,7 @@ async function loadOrGetCandidateIds(): Promise<string[]> {
     IDS.ENTITY.US.CONGRESS.CONGRESS_117
   );
 
-  writeJson(CANDIDATES_FILE, candidateIds);
+  writeJson(CANDIDATES_JSON_FILE, candidateIds);
 
   return candidateIds;
 }
@@ -103,15 +106,24 @@ async function loadOrGetCandidateIds(): Promise<string[]> {
 async function loadOrGetPoliticians(
   candidateIds: string[]
 ): Promise<Politician[]> {
-  let politicians = readJson<Politician[]>(POLITICIANS_FILE);
-  if (politicians) {
-    return politicians;
+  let politicians = readJson<Politician[]>(POLITICIANS_JSON_FILE);
+
+  if (!politicians) {
+    console.log('Getting politician names');
+    politicians = await getPoliticians(candidateIds);
+
+    writeJson(POLITICIANS_JSON_FILE, politicians);
+
+    // Write to CSV
+    const csvWriter = createObjectCsvWriter({
+      path: POLITICIANS_CSV_FILE,
+      header: [
+        { id: 'name', title: 'name' },
+        { id: 'party', title: 'party' },
+      ],
+    });
+    await csvWriter.writeRecords(politicians);
   }
-
-  console.log('Getting politician names');
-  politicians = await getPoliticians(candidateIds);
-
-  writeJson(POLITICIANS_FILE, politicians);
 
   return politicians;
 }
@@ -162,16 +174,24 @@ function getLatestParty(entity: Entity): Party | null {
 }
 
 async function loadOrGetEdges(titles: string[]): Promise<Edge[]> {
-  let edges = readJson<Edge[]>(EDGES_FILE);
+  let edges = readJson<Edge[]>(EDGES_JSON_FILE);
 
-  if (edges) {
-    return edges;
+  if (!edges) {
+    console.log('Getting edges');
+    edges = await getEdges(titles);
+
+    writeJson(EDGES_JSON_FILE, edges);
+
+    // Write to CSV
+    const csvWriter = createObjectCsvWriter({
+      path: EDGES_CSV_FILE,
+      header: [
+        { id: 'from', title: 'from' },
+        { id: 'to', title: 'to' },
+      ],
+    });
+    await csvWriter.writeRecords(edges);
   }
-
-  console.log('Getting edges');
-  edges = await getEdges(titles);
-
-  writeJson(EDGES_FILE, edges);
 
   return edges;
 }

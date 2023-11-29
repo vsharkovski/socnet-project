@@ -1,0 +1,21 @@
+{
+  "scripts": {
+    "build": "npx tsc && browserify build/index.js -o build/bundle.js",
+    "start": "npm run build && node build/server.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/papaparse": "^5.3.14",
+    "@types/sigmajs": "^1.0.31",
+    "kotatsu": "^0.23.1",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "graphology": "^0.25.4",
+    "graphology-components": "^1.5.4",
+    "graphology-layout": "^0.6.1",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "papaparse": "^5.4.1",
+    "sigma": "^3.0.0-alpha3"
+  }
+}
