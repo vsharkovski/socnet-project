@@ -1,8 +1,18 @@
 import Papa from 'papaparse';
 import Graph from 'graphology';
-import { circular } from 'graphology-layout';
+import { circular, random } from 'graphology-layout';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
+
+interface PoliticianCsvLine {
+  name: string;
+  party: string;
+}
+
+interface EdgeCsvLine {
+  from: string;
+  to: string;
+}
 
 const COLORS: Record<string, string> = {
   democratic: '#5A75DB',
@@ -10,73 +20,46 @@ const COLORS: Record<string, string> = {
 };
 
 async function main(): Promise<void> {
-  const graph: Graph = new Graph();
-
-  await new Promise<void>((resolve) => {
-    Papa.parse<{ name: string; party: string }>('public/politicians.csv', {
-      download: true,
-      header: true,
-      delimiter: ',',
-      complete: (results) => {
-        results.data.forEach((line) => {
-          if (!graph.hasNode(line.name)) {
-            // Create the node
-            console.log('Adding node', line.name);
-
-            graph.addNode(line.name, {
-              label: line.name,
-              color: COLORS[line.party],
-            });
-          }
-        });
-        resolve();
-      },
-    });
-  });
-
-  await new Promise<void>((resolve) => {
-    Papa.parse<{ from: string; to: string }>('public/edges.csv', {
-      download: true,
-      header: true,
-      delimiter: ',',
-      complete: (results) => {
-        results.data.forEach((line) => {
-          // Create the edge
-          if (
-            line.from &&
-            line.to &&
-            !graph.hasDirectedEdge(line.from, line.to)
-          ) {
-            console.log(`Adding edge '${line.from}' - '${line.to}'`);
-
-            graph.addDirectedEdge(line.from, line.to, { weight: 1 });
-          }
-        });
-        resolve();
-      },
-      error: (error) => {
-        console.error(error);
-      },
-    });
-  });
-
-  // Use degrees for node sizes
-  const degrees = graph.nodes().map((node) => graph.degree(node));
-  const minDegree = Math.min(...degrees);
-  const maxDegree = Math.max(...degrees);
-  const degreeDistance = maxDegree - minDegree;
-  const minSize = 2;
-  const maxSize = 15;
-  const sizeDistance = maxSize - minSize;
-
-  graph.forEachNode((node) => {
-    const degree = graph.degree(node);
-    graph.setNodeAttribute(
-      node,
-      'size',
-      minSize + ((degree - minDegree) / degreeDistance) * sizeDistance
+  async function congress117(): Promise<Graph> {
+    const edgeLines = await readCsv<EdgeCsvLine>('public/c117-edges.csv');
+    const politicianLines = await readCsv<PoliticianCsvLine>(
+      'public/c117-politicians.csv'
     );
-  });
+    const sample = getSample(politicianLines, 20);
+    const graph = createFullGraph(sample, edgeLines);
+    resizeNodes(graph, 2, 15);
+    return graph;
+  }
+
+  async function controversialGroup(): Promise<Graph> {
+    const politicianLines = await readCsv<PoliticianCsvLine>(
+      'public/us-politicians.csv'
+    );
+    const sourcesLines = await readCsv<PoliticianCsvLine>(
+      'public/contr-politicians.csv'
+    );
+    const edgeLines = await readCsv<EdgeCsvLine>('public/contr-edges.csv');
+    const sources = sourcesLines.map((line) => line.name);
+    const graph = createIndividualGraph(politicianLines, edgeLines, sources);
+    resizeNodes(graph, 6, 15);
+    return graph;
+  }
+
+  async function randomSample(): Promise<Graph> {
+    const politicianLines = await readCsv<PoliticianCsvLine>(
+      'public/us-politicians.csv'
+    );
+    const sourcesLines = await readCsv<PoliticianCsvLine>(
+      'public/random-politicians.csv'
+    );
+    const edgeLines = await readCsv<EdgeCsvLine>('public/random-edges.csv');
+    const sources = sourcesLines.map((line) => line.name);
+    const graph = createIndividualGraph(politicianLines, edgeLines, sources);
+    resizeNodes(graph, 6, 15);
+    return graph;
+  }
+
+  const graph = await randomSample();
 
   // Position nodes on a circle, then run Force Atlas 2 for a while to get
   // proper graph layout
@@ -90,7 +73,131 @@ async function main(): Promise<void> {
 
   // Draw the graph using sigma
   const container = document.getElementById('sigma-container') as HTMLElement;
-  new Sigma(graph, container);
+
+  const renderer = new Sigma(graph, container, {
+    labelRenderedSizeThreshold: 0,
+    labelDensity: 10,
+  });
+}
+
+function createFullGraph(
+  politicianLines: PoliticianCsvLine[],
+  edgeLines: EdgeCsvLine[]
+): Graph {
+  const graph: Graph = new Graph();
+
+  for (const line of politicianLines) {
+    if (graph.hasNode(line.name)) continue;
+    // Create the node
+    console.log('Adding node', line.name);
+    graph.addNode(line.name, {
+      label: line.name,
+      color: COLORS[line.party],
+    });
+  }
+
+  for (let line of edgeLines) {
+    if (
+      line.from &&
+      line.to &&
+      graph.hasNode(line.from) &&
+      graph.hasNode(line.to) &&
+      !graph.hasDirectedEdge(line.from, line.to)
+    ) {
+      // Create the edge
+      console.log(`Adding edge ${line.from} - ${line.to}`);
+      graph.addDirectedEdge(line.from, line.to, { weight: 1 });
+    }
+  }
+
+  return graph;
+}
+
+function createIndividualGraph(
+  politicianLines: PoliticianCsvLine[],
+  edgeLines: EdgeCsvLine[],
+  sources: string[]
+): Graph {
+  const graph: Graph = new Graph();
+
+  const sourcesSet = new Set(sources);
+  const relevant = new Set<string>();
+
+  for (const line of edgeLines) {
+    if (sourcesSet.has(line.from)) {
+      relevant.add(line.from);
+      relevant.add(line.to);
+    }
+  }
+
+  for (const line of politicianLines) {
+    if (!relevant.has(line.name) || graph.hasNode(line.name)) continue;
+    // Create the node
+    console.log('Adding node', line.name);
+    graph.addNode(line.name, {
+      label: line.name,
+      color: COLORS[line.party],
+    });
+  }
+
+  for (let line of edgeLines) {
+    if (
+      line.from &&
+      line.to &&
+      graph.hasNode(line.from) &&
+      graph.hasNode(line.to) &&
+      !graph.hasDirectedEdge(line.from, line.to)
+    ) {
+      // Create the edge
+      console.log(`Adding edge ${line.from} - ${line.to}`);
+      graph.addDirectedEdge(line.from, line.to, { weight: 1 });
+    }
+  }
+
+  return graph;
+}
+
+function resizeNodes(graph: Graph, minSize: number, maxSize: number): void {
+  // Use degrees for node sizes
+  const degrees = graph.nodes().map((node) => graph.degree(node));
+  const minDegree = Math.min(...degrees);
+  const maxDegree = Math.max(...degrees);
+  const degreeDistance = maxDegree - minDegree;
+  const sizeDistance = maxSize - minSize;
+
+  graph.forEachNode((node) => {
+    const degree = graph.degree(node);
+    graph.setNodeAttribute(
+      node,
+      'size',
+      minSize + ((degree - minDegree + 1) / (degreeDistance + 1)) * sizeDistance
+    );
+  });
+}
+
+async function readCsv<T>(path: string): Promise<T[]> {
+  return new Promise<T[]>((resolve) => {
+    Papa.parse<T>(path, {
+      download: true,
+      header: true,
+      delimiter: ',',
+      complete: (results) => resolve(results.data),
+      error: (error) => console.error(error),
+    });
+  });
+}
+
+function getSample<T>(data: T[], size: number): T[] {
+  const dataCopy: T[] = [...data];
+  const sample: T[] = [];
+
+  for (let i = 0; i < Math.min(size, dataCopy.length); i++) {
+    let j = Math.floor(Math.random() * dataCopy.length);
+    sample.push(dataCopy[j]);
+    dataCopy.splice(j, 1);
+  }
+
+  return sample;
 }
 
 main();

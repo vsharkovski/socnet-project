@@ -14,13 +14,7 @@ import {
 import { doBatched } from './batch-utils';
 import { exit } from 'process';
 import { createObjectCsvWriter } from 'csv-writer';
-
-// File names.
-const CANDIDATES_JSON_FILE = 'output/candidates.json';
-const POLITICIANS_JSON_FILE = 'output/politicians.json';
-const POLITICIANS_CSV_FILE = 'output/politicians.csv';
-const EDGES_JSON_FILE = 'output/edges.json';
-const EDGES_CSV_FILE = 'output/edges.csv';
+import { ObjectMap } from 'csv-writer/src/lib/lang/object';
 
 // Batch size when sending multiple items to APIs.
 const BATCH_SIZE = 50;
@@ -67,65 +61,101 @@ interface Edge {
 }
 
 async function main(): Promise<void> {
+  async function congress117() {
+    // 117th Congress
+    const candidateIds = await loadOrGet('output/c117-candidates.json', () =>
+      getBacklinks(WIKIDATA_API_URL, IDS.ENTITY.US.CONGRESS.CONGRESS_117)
+    );
+    const politicians = await loadOrGet('output/c117-politicians.json', () =>
+      getPoliticians(candidateIds)
+    );
+    await writeCsv('output/c117-politicians.csv', politicians);
+    const politicianNames = politicians.map((p) => p.name);
+    const edges = await getEdges(politicianNames, politicianNames);
+    await writeCsv('output/c117-edges.csv', edges);
+  }
+
+  async function usPoliticians(): Promise<Politician[]> {
+    const candidateIds = await loadOrGet(
+      'output/us-candidates.json',
+      async () => {
+        const entityIds = [
+          IDS.ENTITY.US.POSITION.SENATOR,
+          IDS.ENTITY.US.POSITION.REPRESENTATIVE,
+          IDS.ENTITY.US.POSITION.PRESIDENT,
+          IDS.ENTITY.US.POSITION.VICE_PRESIDENT,
+        ];
+        const results = [];
+
+        for (const entityId of entityIds) {
+          const result = await getBacklinks(WIKIDATA_API_URL, entityId);
+          results.push(result);
+        }
+
+        return results.flat();
+      }
+    );
+
+    const politicians = await loadOrGet('output/us-politicians.json', () =>
+      getPoliticians(candidateIds)
+    );
+
+    await writeCsv('output/us-politicians.csv', politicians);
+
+    return politicians;
+  }
+
+  async function controversialGroup() {
+    // Controversial US politicians
+    // Adding party as well in order to ensure they are added to list of politicians,
+    // even if they are skipped in the getPoliticians step (happened with e.g. George Santos)
+    const sources = [
+      ['Marjorie Taylor Greene', 'republican'],
+      ['Ron DeSantis', 'republican'],
+      ['Alexandria Ocasio-Cortez', 'democratic'],
+      ['Ilhan Omar', 'democratic'],
+      ['Matt Gaetz', 'republican'],
+      ['Bernie Sanders', 'democratic'],
+      ['George Santos', 'republican'],
+      ['Lauren Boebert', 'republican'],
+      ['Joe Manchin', 'democratic'],
+      ['Donald Trump', 'republican'],
+    ];
+    const sourcesPoliticians: Politician[] = sources.map((source) => ({
+      name: source[0],
+      party: source[1] as Party,
+    }));
+    await writeCsv('output/contr-politicians.csv', sourcesPoliticians);
+
+    const politicians = await usPoliticians();
+    for (const p of sourcesPoliticians) {
+      politicians.push(p);
+    }
+
+    const sourcesNames = sourcesPoliticians.map((p) => p.name);
+    const politicianNames = politicians.map((p) => p.name);
+    const edges = await getEdges(sourcesNames, politicianNames);
+    await writeCsv('output/contr-edges.csv', edges);
+  }
+
+  async function randomSample() {
+    const politicians = await usPoliticians();
+
+    // Random sample
+    const sources = getSample(politicians, 20);
+    writeCsv('output/random-politicians.csv', sources);
+
+    const politicianNames = politicians.map((p) => p.name);
+    const sourcesNames = sources.map((p) => p.name);
+    const edges = await getEdges(sourcesNames, politicianNames);
+    await writeCsv('output/random-edges.csv', edges);
+  }
+
   if (!existsSync('output')) {
     mkdirSync('output');
   }
 
-  const candidateIds = await loadOrGetCandidateIds();
-  console.log('Candidate IDs', candidateIds);
-
-  const politicians = await loadOrGetPoliticians(candidateIds);
-  console.log('Politicians', politicians);
-
-  const politicianNames = politicians.map((p) => p.name);
-  const edges = await loadOrGetEdges(politicianNames);
-  console.log('Graph edges', edges);
-
-  console.log('Graph node count:', politicians.length);
-  console.log('Graph edge count:', edges.length);
-}
-
-async function loadOrGetCandidateIds(): Promise<string[]> {
-  let candidateIds = readJson<string[]>(CANDIDATES_JSON_FILE);
-  if (candidateIds) {
-    return candidateIds;
-  }
-
-  console.log('Getting candidate IDs');
-
-  candidateIds = await getBacklinks(
-    WIKIDATA_API_URL,
-    IDS.ENTITY.US.CONGRESS.CONGRESS_117
-  );
-
-  writeJson(CANDIDATES_JSON_FILE, candidateIds);
-
-  return candidateIds;
-}
-
-async function loadOrGetPoliticians(
-  candidateIds: string[]
-): Promise<Politician[]> {
-  let politicians = readJson<Politician[]>(POLITICIANS_JSON_FILE);
-
-  if (!politicians) {
-    console.log('Getting politician names');
-    politicians = await getPoliticians(candidateIds);
-
-    writeJson(POLITICIANS_JSON_FILE, politicians);
-
-    // Write to CSV
-    const csvWriter = createObjectCsvWriter({
-      path: POLITICIANS_CSV_FILE,
-      header: [
-        { id: 'name', title: 'name' },
-        { id: 'party', title: 'party' },
-      ],
-    });
-    await csvWriter.writeRecords(politicians);
-  }
-
-  return politicians;
+  await randomSample();
 }
 
 async function getPoliticians(candidateIds: string[]): Promise<Politician[]> {
@@ -173,39 +203,19 @@ function getLatestParty(entity: Entity): Party | null {
     : 'democratic';
 }
 
-async function loadOrGetEdges(titles: string[]): Promise<Edge[]> {
-  let edges = readJson<Edge[]>(EDGES_JSON_FILE);
-
-  if (!edges) {
-    console.log('Getting edges');
-    edges = await getEdges(titles);
-
-    writeJson(EDGES_JSON_FILE, edges);
-
-    // Write to CSV
-    const csvWriter = createObjectCsvWriter({
-      path: EDGES_CSV_FILE,
-      header: [
-        { id: 'from', title: 'from' },
-        { id: 'to', title: 'to' },
-      ],
-    });
-    await csvWriter.writeRecords(edges);
-  }
-
-  return edges;
-}
-
-async function getEdges(titles: string[]): Promise<Edge[]> {
-  const nodes = new Set(titles);
+async function getEdges(
+  sources: string[],
+  validEnds: string[]
+): Promise<Edge[]> {
+  const validEndsSet = new Set(validEnds);
   const edges: Edge[] = [];
 
-  for (const title of titles) {
-    const links = await getLinksNoFooter(title);
+  for (const source of sources) {
+    const links = await getLinksNoFooter(source);
 
-    for (const link of links) {
-      if (nodes.has(link)) {
-        edges.push({ from: title, to: link });
+    for (const end of links) {
+      if (validEndsSet.has(end)) {
+        edges.push({ from: source, to: end });
       }
     }
   }
@@ -223,6 +233,52 @@ async function getLinksNoFooter(title: string): Promise<string[]> {
   } else {
     return parseLinks(wikitext, endIndex);
   }
+}
+
+async function loadOrGet<T>(
+  jsonPath: string,
+  getter: () => Promise<T[]>
+): Promise<T[]> {
+  let data = readJson<T[]>(jsonPath);
+  if (data) {
+    return data;
+  }
+
+  data = await getter();
+  writeJson(jsonPath, data);
+  return data;
+}
+
+async function writeCsv<T extends ObjectMap<any>>(
+  path: string,
+  data: T[]
+): Promise<void> {
+  if (data.length == 0) {
+    console.log(`Data empty, not writing to ${path}`);
+    return;
+  }
+
+  const header = Object.keys(data[0]).map((key) => ({ id: key, title: key }));
+
+  const writer = createObjectCsvWriter({
+    path: path,
+    header: header,
+  });
+
+  return writer.writeRecords(data);
+}
+
+function getSample<T>(data: T[], size: number): T[] {
+  const dataCopy: T[] = [...data];
+  const sample: T[] = [];
+
+  for (let i = 0; i < Math.min(size, dataCopy.length); i++) {
+    let j = Math.floor(Math.random() * dataCopy.length);
+    sample.push(dataCopy[j]);
+    dataCopy.splice(j, 1);
+  }
+
+  return sample;
 }
 
 // Tests.
