@@ -8,6 +8,7 @@
   "scripts": {
     "build": "npx tsc && browserify build/website/index.js -o build/website/bundle.js",
     "data": "npm run build && node ./build/data/get-data.js",
+    "ana": "npm run build && node./build/data/analysis.js",
     "site": "npm run build && node ./build/website/server.js"
   },
   "dependencies": {

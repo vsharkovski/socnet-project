@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync } from 'fs';
-import { readJson, writeJson } from './json-utils';
 import {
   Entity,
   MAX_BATCH_SIZE,
@@ -13,8 +12,9 @@ import {
 } from './api-client';
 import { doBatched } from './batch-utils';
 import { exit } from 'process';
-import { createObjectCsvWriter } from 'csv-writer';
-import { ObjectMap } from 'csv-writer/src/lib/lang/object';
+import { loadOrGet, writeCsv } from '../file-utils';
+import { getSample } from '../stats-utils';
+import { Edge, Party, Politician } from '../model';
 
 // Batch size when sending multiple items to APIs.
 const BATCH_SIZE = 50;
@@ -47,18 +47,6 @@ const IDS = {
     },
   },
 };
-
-export type Party = 'republican' | 'democratic';
-
-export interface Politician {
-  name: string;
-  party: Party;
-}
-
-export interface Edge {
-  from: string;
-  to: string;
-}
 
 async function main(): Promise<void> {
   async function congress117() {
@@ -233,52 +221,6 @@ async function getLinksNoFooter(title: string): Promise<string[]> {
   } else {
     return parseLinks(wikitext, endIndex);
   }
-}
-
-async function loadOrGet<T>(
-  jsonPath: string,
-  getter: () => Promise<T[]>
-): Promise<T[]> {
-  let data = readJson<T[]>(jsonPath);
-  if (data) {
-    return data;
-  }
-
-  data = await getter();
-  writeJson(jsonPath, data);
-  return data;
-}
-
-async function writeCsv<T extends ObjectMap<any>>(
-  path: string,
-  data: T[]
-): Promise<void> {
-  if (data.length == 0) {
-    console.log(`Data empty, not writing to ${path}`);
-    return;
-  }
-
-  const header = Object.keys(data[0]).map((key) => ({ id: key, title: key }));
-
-  const writer = createObjectCsvWriter({
-    path: path,
-    header: header,
-  });
-
-  return writer.writeRecords(data);
-}
-
-function getSample<T>(data: T[], size: number): T[] {
-  const dataCopy: T[] = [...data];
-  const sample: T[] = [];
-
-  for (let i = 0; i < Math.min(size, dataCopy.length); i++) {
-    let j = Math.floor(Math.random() * dataCopy.length);
-    sample.push(dataCopy[j]);
-    dataCopy.splice(j, 1);
-  }
-
-  return sample;
 }
 
 // Tests.
