@@ -48,14 +48,14 @@ const IDS = {
   },
 };
 
-type Party = 'republican' | 'democratic';
+export type Party = 'republican' | 'democratic';
 
-interface Politician {
+export interface Politician {
   name: string;
   party: Party;
 }
 
-interface Edge {
+export interface Edge {
   from: string;
   to: string;
 }
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     mkdirSync('output');
   }
 
-  await randomSample();
+  await congress117();
 }
 
 async function getPoliticians(candidateIds: string[]): Promise<Politician[]> {
@@ -227,7 +227,7 @@ async function getLinksNoFooter(title: string): Promise<string[]> {
   const wikitext = await getWikitext(WIKIPEDIA_API_URL, title);
   if (!wikitext) return [];
 
-  let endIndex: number = wikitext.indexOf('== External Links ==');
+  let endIndex: number = wikitext.indexOf('External Links');
   if (endIndex == -1) {
     return parseLinks(wikitext);
   } else {

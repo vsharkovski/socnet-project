@@ -1,29 +1,20 @@
 import Papa from 'papaparse';
 import Graph from 'graphology';
-import { circular, random } from 'graphology-layout';
+import { circular } from 'graphology-layout';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
+import { Edge, Party, Politician } from '../data/get-data';
 
-interface PoliticianCsvLine {
-  name: string;
-  party: string;
-}
-
-interface EdgeCsvLine {
-  from: string;
-  to: string;
-}
-
-const COLORS: Record<string, string> = {
+const COLORS: Record<Party, string> = {
   democratic: '#5A75DB',
   republican: '#FA5A3D',
 };
 
 async function main(): Promise<void> {
   async function congress117(): Promise<Graph> {
-    const edgeLines = await readCsv<EdgeCsvLine>('public/c117-edges.csv');
-    const politicianLines = await readCsv<PoliticianCsvLine>(
-      'public/c117-politicians.csv'
+    const edgeLines = await readCsv<Edge>('output/c117-edges.csv');
+    const politicianLines = await readCsv<Politician>(
+      'output/c117-politicians.csv'
     );
     const sample = getSample(politicianLines, 20);
     const graph = createFullGraph(sample, edgeLines);
@@ -32,13 +23,13 @@ async function main(): Promise<void> {
   }
 
   async function controversialGroup(): Promise<Graph> {
-    const politicianLines = await readCsv<PoliticianCsvLine>(
-      'public/us-politicians.csv'
+    const politicianLines = await readCsv<Politician>(
+      'output/us-politicians.csv'
     );
-    const sourcesLines = await readCsv<PoliticianCsvLine>(
-      'public/contr-politicians.csv'
+    const sourcesLines = await readCsv<Politician>(
+      'output/contr-politicians.csv'
     );
-    const edgeLines = await readCsv<EdgeCsvLine>('public/contr-edges.csv');
+    const edgeLines = await readCsv<Edge>('output/contr-edges.csv');
     const sources = sourcesLines.map((line) => line.name);
     const graph = createIndividualGraph(politicianLines, edgeLines, sources);
     resizeNodes(graph, 6, 15);
@@ -46,13 +37,13 @@ async function main(): Promise<void> {
   }
 
   async function randomSample(): Promise<Graph> {
-    const politicianLines = await readCsv<PoliticianCsvLine>(
-      'public/us-politicians.csv'
+    const politicianLines = await readCsv<Politician>(
+      'output/us-politicians.csv'
     );
-    const sourcesLines = await readCsv<PoliticianCsvLine>(
-      'public/random-politicians.csv'
+    const sourcesLines = await readCsv<Politician>(
+      'output/random-politicians.csv'
     );
-    const edgeLines = await readCsv<EdgeCsvLine>('public/random-edges.csv');
+    const edgeLines = await readCsv<Edge>('output/random-edges.csv');
     const sources = sourcesLines.map((line) => line.name);
     const graph = createIndividualGraph(politicianLines, edgeLines, sources);
     resizeNodes(graph, 6, 15);
@@ -81,8 +72,8 @@ async function main(): Promise<void> {
 }
 
 function createFullGraph(
-  politicianLines: PoliticianCsvLine[],
-  edgeLines: EdgeCsvLine[]
+  politicianLines: Politician[],
+  edgeLines: Edge[]
 ): Graph {
   const graph: Graph = new Graph();
 
@@ -114,8 +105,8 @@ function createFullGraph(
 }
 
 function createIndividualGraph(
-  politicianLines: PoliticianCsvLine[],
-  edgeLines: EdgeCsvLine[],
+  politicianLines: Politician[],
+  edgeLines: Edge[],
   sources: string[]
 ): Graph {
   const graph: Graph = new Graph();

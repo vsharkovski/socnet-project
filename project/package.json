@@ -1,13 +1,22 @@
 {
   "devDependencies": {
     "@types/node": "^20.8.6",
+    "@types/papaparse": "^5.3.14",
+    "@types/sigmajs": "^1.0.31",
     "typescript": "^5.2.2"
   },
   "scripts": {
-    "build": "npx tsc",
-    "start": "npm run build && node ./build/index.js"
+    "build": "npx tsc && browserify build/website/index.js -o build/website/bundle.js",
+    "data": "npm run build && node ./build/data/get-data.js",
+    "site": "npm run build && node ./build/website/server.js"
   },
   "dependencies": {
-    "csv-writer": "^1.6.0"
+    "csv-writer": "^1.6.0",
+    "graphology": "^0.25.4",
+    "graphology-components": "^1.5.4",
+    "graphology-layout": "^0.6.1",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "papaparse": "^5.4.1",
+    "sigma": "^3.0.0-alpha3"
   }
 }

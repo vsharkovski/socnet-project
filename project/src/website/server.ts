@@ -6,7 +6,8 @@ const server = http.createServer((req, res) => {
   let filePath = path.join(
     __dirname,
     '..',
-    req.url! === '/' ? 'src/index.html' : req.url!
+    '..',
+    req.url! === '/' ? 'src/website/index.html' : req.url!
   );
   console.log('filePath', filePath);
 
