@@ -1,11 +1,6 @@
 import Graph from 'graphology';
 import { Edge, Party, Politician } from './model';
 
-const COLORS: Record<Party, string> = {
-  democratic: '#5A75DB',
-  republican: '#FA5A3D',
-};
-
 export function createFullGraph(
   politicians: Politician[],
   edges: Edge[]
@@ -16,7 +11,7 @@ export function createFullGraph(
     if (graph.hasNode(politician.name)) continue;
     graph.addNode(politician.name, {
       label: politician.name,
-      color: COLORS[politician.party],
+      party: politician.party,
     });
   }
 
@@ -55,7 +50,7 @@ export function createIndividualGraph(
       continue;
     graph.addNode(politician.name, {
       label: politician.name,
-      color: COLORS[politician.party],
+      party: politician.party,
     });
   }
 

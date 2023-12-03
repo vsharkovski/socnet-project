@@ -2,7 +2,7 @@ import Graph from 'graphology';
 import { circular } from 'graphology-layout';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
-import { Edge, Politician } from '../model';
+import { Edge, Party, Politician } from '../model';
 import { getSample } from '../stats-utils';
 import { readCsv } from '../file-utils';
 import { createFullGraph, createIndividualGraph, resizeNodes } from '../graph';
@@ -40,6 +40,16 @@ async function main(): Promise<void> {
   }
 
   const graph = await randomSample();
+
+  // Color nodes based on party
+  const COLORS: Record<string, string> = {
+    democratic: '#5A75DB',
+    republican: '#FA5A3D',
+  };
+
+  graph.forEachNode((node, attributes) =>
+    graph.setNodeAttribute(node, 'color', COLORS[attributes.party as Party])
+  );
 
   // Position nodes on a circle, then run Force Atlas 2 for a while to get
   // proper graph layout
